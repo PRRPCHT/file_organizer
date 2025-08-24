@@ -9,11 +9,19 @@ use colored::*;
 
 pub mod settings;
 
+/// FileOrganizer is a struct that contains the settings for the file organizer.
 pub struct FileOrganizer {
     settings: Settings,
 }
 
 impl FileOrganizer {
+    /// Creates a new FileOrganizer.
+    ///
+    /// ### Parameters
+    /// - `settings_file_path`: The path to the settings file.
+    ///
+    /// ### Returns
+    /// - `FileOrganizer`: The FileOrganizer.
     pub fn new(settings_file_path:PathBuf) -> Self {
         let mut settings = Settings::load_from_file(&settings_file_path).expect("Error loading recipes file, cannot continue");
         for recipe in &mut settings.recipes {
@@ -26,6 +34,13 @@ impl FileOrganizer {
         Self { settings }
     }
 
+    /// Runs all recipes.
+    ///
+    /// ### Parameters
+    /// - `dry_run`: If true, the recipes will not be run.
+    ///
+    /// ### Returns
+    /// - `Result<(), anyhow::Error>`: The result of the recipes run.
     pub fn run(&mut self, dry_run: bool) -> anyhow::Result<()> {
         for recipe in &self.settings.recipes {
             self.run_recipe(&recipe, dry_run)?;
@@ -44,6 +59,14 @@ impl FileOrganizer {
         Ok(())
     }
 
+    /// Runs a recipe.
+    ///
+    /// ### Parameters
+    /// - `recipe`: The recipe to run.
+    /// - `dry_run`: If true, the recipe will not be run.
+    ///
+    /// ### Returns
+    /// - `Result<(), anyhow::Error>`: The result of the recipe run.
     fn run_recipe(&self, recipe: &Recipe, dry_run: bool) -> anyhow::Result<()> {
         if !recipe.source_folder.is_dir()  {
             return Err(anyhow::Error::msg(format!("{} - Source folder not a directory: {}", recipe.name, recipe.source_folder.display())));
@@ -106,6 +129,14 @@ impl FileOrganizer {
     }
 }
 
+/// Checks if the extension of a file is allowed.
+///
+/// ### Parameters
+/// - `file`: The file to check.
+/// - `allowed_extensions`: The allowed extensions.
+///
+/// ### Returns
+/// - `bool`: True if the extension is allowed, false otherwise.
 fn is_extension_allowed(file: &Path, allowed_extensions: &Option<Vec<String>>) -> bool {
     if let Some(allowed_extensions) = allowed_extensions {
         if allowed_extensions.is_empty() {
@@ -124,6 +155,14 @@ fn is_extension_allowed(file: &Path, allowed_extensions: &Option<Vec<String>>) -
     return false;
 }
 
+/// Converts a date to a folder name.
+///
+/// ### Parameters
+/// - `date`: The date to convert.
+/// - `format`: The format to use.
+///
+/// ### Returns
+/// - `String`: The folder name.
 fn date_to_folder_name(date: &DateTime<Utc>, format: &Option<String>) -> String {
     if let Some(format) = format {
         return date.format(format.as_str()).to_string();

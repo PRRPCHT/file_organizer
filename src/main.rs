@@ -6,6 +6,10 @@ mod file_organizer;
 use file_organizer::FileOrganizer;
 use colored::*;
 
+/// Makes the arguments.
+///
+/// ### Return
+/// A Command with the arguments.
 fn make_args() -> Command {
     command!()
         .about("Organize files into folders based on their extension")
