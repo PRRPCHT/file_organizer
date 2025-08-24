@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 use crate::file_organizer::settings::Settings;
 use crate::file_organizer::settings::Recipe;
 use std::fs;
+use std::fs::DirEntry;
 use std::path::Path;
 use std::path::PathBuf;
 use colored::*;
@@ -74,59 +75,128 @@ impl FileOrganizer {
         if !recipe.destination_folder.is_dir() {
             return Err(anyhow::Error::msg(format!("{} - Target folder not a directory: {}", recipe.name, recipe.destination_folder.display())));
         }
-        let date_boundary = recipe.last_run.clone().unwrap_or_else(|| "1970-01-01".to_string());
-        //let date_boundary = DateTime::parse_from_str(&date_boundary, "%Y-%m-%d")?;
-        let date_boundary = DateTime::parse_from_str(&format!("{} 00:00:00 +0000", date_boundary), "%Y-%m-%d %H:%M:%S %z")?;
+        let date_boundary = get_date_boundary(recipe)?;
 
         let entries = fs::read_dir(&recipe.source_folder)?;
         for entry in entries {
             let entry = entry?;
-            let from_file = entry.path();
-            if from_file.is_file() {
-                if let Some(filename) = from_file.file_name() {
-                    if filename.to_str().unwrap().starts_with(".") {
-                        continue;
-                    }
-                    if !is_extension_allowed(&from_file, &recipe.allowed_extensions) {
-                        continue;
-                    }
-                    let last_modification_date = entry.metadata()?.modified()?;
-                    let last_modification_date = DateTime::<Utc>::from(last_modification_date);
-                    if last_modification_date.with_timezone(&date_boundary.timezone()) < date_boundary {
-                        continue;
-                    }
-                    //let first_level_folder = recipe.first_level_folder.clone().unwrap_or_else(|| "".to_string());
-                    let mut dest_folder = recipe.destination_folder.clone();
-                    if let Some(subfolders) = &recipe.subfolders {
-                        for subfolder in subfolders {
-                            let subfolder_name = date_to_folder_name(&last_modification_date, &Some(subfolder.clone()));
-                            dest_folder = dest_folder.join(subfolder_name);
-                        }
-                    }
-                    
-                    if !dry_run {
-                        if !dest_folder.exists() {
-                            fs::create_dir_all(&dest_folder)?;  
-                        }
-                    }
-                    let dest_file = dest_folder.join(filename.to_str().unwrap());
-                    if recipe.move_files {
-                        if !dry_run {    
-                            fs::rename(&from_file, &dest_file)?;
-                        } 
-                        println!("{} {} {} - {}", "✅".green(), recipe.name.blue(), "File moved".green(), dest_file.to_str().unwrap());
-                    } else {
-                        if !dry_run {
-                            fs::copy(&from_file, &dest_file)?;
-                        } 
-                        println!("{} {} {} - {}", "✅".green(), recipe.name.blue(), "File copied".green(), dest_file.to_str().unwrap());
-                    }
+            if let Ok(is_file_valid) = run_for_file(entry, recipe, &date_boundary, dry_run) {
+                if !is_file_valid {
+                    continue;
                 }
             }
         }
        
         Ok(())
     }
+}
+
+/// Runs a recipe for a file.
+/// The date boundary is passed as parameter in order to do not get recalculated for each call.
+///
+/// ### Parameters
+/// - `entry`: The entry to run the recipe for.
+/// - `recipe`: The recipe to run.
+/// - `date_boundary`: The date boundary.
+/// - `dry_run`: If true, the recipe will not be run.
+///
+/// ### Returns
+/// - `bool`: True if the file is matched by the recipe and has been processed, false otherwise.
+fn run_for_file(entry: DirEntry, recipe: &Recipe, date_boundary: &DateTime<Utc>, dry_run: bool) -> anyhow::Result<bool> {
+    let from_file = entry.path();
+    if from_file.is_file() {
+        if let Some(filename) = from_file.file_name() {
+            if filename.to_str().unwrap().starts_with(".") {
+                return Ok(false);
+            }
+            if !is_extension_allowed(&from_file, &recipe.allowed_extensions) {
+                return Ok(false);
+            }
+            let last_modification_date = if let Ok(last_modification_date) = get_last_modification_date(&from_file) {
+                last_modification_date
+            } else {
+                return Err(anyhow::Error::msg(format!("{} - Error getting last modification date: {}", recipe.name, from_file.display())));
+            };
+            if last_modification_date.with_timezone(&date_boundary.timezone()) < *date_boundary {
+                return Ok(false);
+            }
+            let dest_folder = build_dest_folder(recipe, &last_modification_date);
+            
+            if !dry_run {
+                if !dest_folder.exists() {
+                    fs::create_dir_all(&dest_folder)?;  
+                }
+            }
+            let dest_file = dest_folder.join(filename.to_str().unwrap());
+            if recipe.move_files {
+                if !dry_run {    
+                    if let Err(e) = fs::rename(&from_file, &dest_file) {
+                        return Err(anyhow::Error::msg(format!("{} - Error moving file: {}", recipe.name, e)));
+                    }
+                } 
+                println!("{} {} {} - {}", "✅".green(), recipe.name.blue(), "File moved".green(), dest_file.to_str().unwrap());
+            } else {
+                if !dry_run {
+                    if let Err(e) = fs::copy(&from_file, &dest_file) {
+                        return Err(anyhow::Error::msg(format!("{} - Error copying file: {}", recipe.name, e)));
+                    }
+                } 
+                println!("{} {} {} - {}", "✅".green(), recipe.name.blue(), "File copied".green(), dest_file.to_str().unwrap());
+            }
+            return Ok(true);
+        }
+        return Ok(false);
+    }
+    Ok(false)
+}
+
+
+/// Gets the date boundary for a recipe.
+///
+/// ### Parameters
+/// - `recipe`: The recipe to get the date boundary for.
+///
+/// ### Returns
+/// - `Result<DateTime<Utc>, anyhow::Error>`: The date boundary.
+fn get_date_boundary(recipe: &Recipe) -> anyhow::Result<DateTime<Utc>> {
+    let date_boundary = recipe.last_run.clone().unwrap_or_else(|| "1970-01-01".to_string());
+    let date_boundary = DateTime::parse_from_str(&format!("{} 00:00:00 +0000", date_boundary), "%Y-%m-%d %H:%M:%S %z")?.to_utc();
+    Ok(date_boundary)
+}
+
+
+/// Gets the last modification date of a file.
+///
+/// ### Parameters
+/// - `file`: The file to get the last modification date of.
+///
+/// ### Returns
+/// - `Result<DateTime<Utc>, anyhow::Error>`: The last modification date of the file.
+fn get_last_modification_date(file: &Path) -> anyhow::Result<DateTime<Utc>> {
+    let metadata = fs::metadata(file)?;
+    let last_modification_date = metadata.modified()?;
+    let last_modification_date = DateTime::<Utc>::from(last_modification_date);   
+    Ok(last_modification_date)
+}
+
+/// Builds the destination folder.
+///
+/// ### Parameters
+/// - `recipe`: The recipe to build the destination folder for.
+/// - `last_modification_date`: The last modification date of the file.
+///
+/// ### Returns
+/// - `PathBuf`: The destination folder.
+/// - `Result<PathBuf, anyhow::Error>`: The destination folder.
+fn build_dest_folder(recipe: &Recipe, last_modification_date: &DateTime<Utc>) -> PathBuf {
+    let mut dest_folder = recipe.destination_folder.clone();
+    if let Some(subfolders) = &recipe.subfolders {
+        for subfolder in subfolders {
+            let subfolder_name = date_to_folder_name(&last_modification_date, &Some(subfolder.clone()));
+            dest_folder = dest_folder.join(subfolder_name);
+        }
+    }
+    dest_folder
 }
 
 /// Checks if the extension of a file is allowed.
