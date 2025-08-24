@@ -46,16 +46,15 @@ The recipe file is a JSON array containing one or more organization recipes. Eac
 
 ### Recipe Fields
 
-| Field                 | Type          | Required | Description                                                                                                                                                               |
-| --------------------- | ------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                | String        | ✅       | Unique identifier for the recipe.                                                                                                                                         |
-| `source_folder`       | String        | ✅       | Path to the folder containing files to organize.                                                                                                                          |
-| `destination_folder`  | String        | ✅       | Path to the folder where organized files will be placed.                                                                                                                  |
-| `first_level_folder`  | String        | ❌       | Date format for the first level of subfolders (e.g., "%Y" for year). If not set no folder will be created.                                                                |
-| `second_level_folder` | String        | ❌       | Date format for the second level of subfolders (e.g., "%Y-%m-%d" for date)                                                                                                |
-| `allowed_extensions`  | Array[String] | ❌       | List of file extensions to process (empty array = all extensions). If not set no folder will be created.                                                                  |
-| `move_files`          | Boolean       | ❌       | If true, files are moved; if false, files are copied (default: false, files are copied).                                                                                  |
-| `last_run`            | String        | ❌       | Date of last execution (automatically managed) that allows resuming the organization from the last execution/the date set manually. If not set, all files are considered. |
+| Field                | Type          | Required | Description                                                                                                                                                               |
+| -------------------- | ------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`               | String        | ✅       | Unique identifier for the recipe.                                                                                                                                         |
+| `source_folder`      | String        | ✅       | Path to the folder containing files to organize.                                                                                                                          |
+| `destination_folder` | String        | ✅       | Path to the folder where organized files will be placed.                                                                                                                  |
+| `subfolders`         | Array[String] | ❌       | Date format for each level of subfolders (e.g., "%Y" for year). If not set no folder will be created.                                                                     |
+| `allowed_extensions` | Array[String] | ❌       | List of file extensions to process (empty array = all extensions). If not set no folder will be created.                                                                  |
+| `move_files`         | Boolean       | ❌       | If true, files are moved; if false, files are copied (default: false, files are copied).                                                                                  |
+| `last_run`           | String        | ❌       | Date of last execution (automatically managed) that allows resuming the organization from the last execution/the date set manually. If not set, all files are considered. |
 
 ### Date Format Patterns
 
@@ -66,7 +65,7 @@ The tool uses the `chrono` crate's date formatting. Common patterns include:
 - `%d` - Day as zero-padded number (e.g., "01", "31")
 - `%Y-%m` - Year-month (e.g., "2024-01")
 - `%Y-%m-%d` - Full date (e.g., "2024-01-15")
-- `%Y-%m-%d - ` - Date with custom suffix (e.g., "2024-01-15 - ")
+- `%Y-%m-%d - Backup` - Date with custom suffix (e.g., "2024-01-15 - Backup")
 
 ### Example Recipe File
 
@@ -76,8 +75,7 @@ The tool uses the `chrono` crate's date formatting. Common patterns include:
 		"name": "Photo_Organization",
 		"source_folder": "/Users/user/Downloads/Photos",
 		"destination_folder": "/Users/user/Pictures/Organized",
-		"first_level_folder": "%Y",
-		"second_level_folder": "%Y-%m-%d",
+		"subfolders": ["%Y"],
 		"allowed_extensions": ["jpg", "jpeg", "png", "heic", "heif", "dng", "gif"],
 		"move_files": false,
 		"last_run": "2024-01-15"
@@ -86,8 +84,7 @@ The tool uses the `chrono` crate's date formatting. Common patterns include:
 		"name": "Document_Backup",
 		"source_folder": "/Users/user/Documents/Inbox",
 		"destination_folder": "/Users/user/Documents/Archive",
-		"first_level_folder": "%Y",
-		"second_level_folder": "%Y-%m",
+		"subfolders": ["%Y", "%m", "%d"],
 		"allowed_extensions": ["pdf", "doc", "docx", "txt", "rtf"],
 		"move_files": true,
 		"last_run": "2024-01-15"
@@ -96,8 +93,7 @@ The tool uses the `chrono` crate's date formatting. Common patterns include:
 		"name": "Video_Collection",
 		"source_folder": "/Volumes/External/Videos",
 		"destination_folder": "/Users/user/Videos/Organized",
-		"first_level_folder": "%Y",
-		"second_level_folder": "%Y-%m-%d - Videos",
+		"subfolders": ["%Y", "%Y-%m-%d - Videos"],
 		"allowed_extensions": ["mp4", "avi", "mov", "mkv", "wmv"],
 		"move_files": false,
 		"last_run": "2024-01-15"

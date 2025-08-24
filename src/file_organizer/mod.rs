@@ -73,9 +73,14 @@ impl FileOrganizer {
                         continue;
                     }
                     //let first_level_folder = recipe.first_level_folder.clone().unwrap_or_else(|| "".to_string());
-                    let first_level_folder = date_to_folder_name(&last_modification_date, &recipe.first_level_folder);
-                    let second_level_folder = date_to_folder_name(&last_modification_date, &recipe.second_level_folder);
-                    let dest_folder = recipe.destination_folder.join(first_level_folder).join(second_level_folder);
+                    let mut dest_folder = recipe.destination_folder.clone();
+                    if let Some(subfolders) = &recipe.subfolders {
+                        for subfolder in subfolders {
+                            let subfolder_name = date_to_folder_name(&last_modification_date, &Some(subfolder.clone()));
+                            dest_folder = dest_folder.join(subfolder_name);
+                        }
+                    }
+                    
                     if !dry_run {
                         if !dest_folder.exists() {
                             fs::create_dir_all(&dest_folder)?;  
