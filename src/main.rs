@@ -1,10 +1,10 @@
-use std::path::PathBuf;
-use clap::{arg, command, value_parser, ArgAction, ArgMatches, Command};
+use clap::{ArgAction, ArgMatches, Command, arg, command, value_parser};
 use log::LevelFilter;
 use simple_logger::SimpleLogger;
+use std::path::PathBuf;
 mod file_organizer;
-use file_organizer::FileOrganizer;
 use colored::*;
+use file_organizer::FileOrganizer;
 
 /// Makes the arguments.
 ///
@@ -27,7 +27,6 @@ fn make_args() -> Command {
             .required(false)
             .action(ArgAction::SetTrue),
         )
-
 }
 
 /// Gets the recipes path.
@@ -37,7 +36,6 @@ fn make_args() -> Command {
 fn get_recipes(matches: &ArgMatches) -> PathBuf {
     matches.get_one::<PathBuf>("RECIPES").unwrap().to_path_buf()
 }
-
 
 /// Gets the dry run flag.
 ///
@@ -54,7 +52,7 @@ fn main() {
         LevelFilter::Off
     };
     SimpleLogger::new()
-        .with_colors(true) 
+        .with_colors(true)
         .with_level(level)
         .init()
         .unwrap();
@@ -62,11 +60,20 @@ fn main() {
     let recipes = get_recipes(&matches);
     let is_dry_run = get_dry_run_flag(&matches);
     if is_dry_run {
-        println!("{} - No files will be moved or copied", "ℹ️ Dry run mode enabled".blue());
+        println!(
+            "{} - No files will be moved or copied",
+            "ℹ️ Dry run mode enabled".blue()
+        );
     }
 
-    let mut file_organizer = FileOrganizer::new(recipes);
+    let mut file_organizer = match FileOrganizer::new(recipes) {
+        Ok(file_organizer) => file_organizer,
+        Err(e) => {
+            println!("{} {}", "❌Error:".red().bold(), e);
+            return;
+        }
+    };
     if let Err(e) = file_organizer.run(is_dry_run) {
-        log::error!("{} {}", "❌ Error:".red().bold(), e);
+        println!("{} {}", "❌Error:".red().bold(), e);
     }
 }

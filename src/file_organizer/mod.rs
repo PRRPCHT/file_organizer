@@ -1,4 +1,5 @@
 use crate::file_organizer::settings::{DateComparator, Recipe, Settings};
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use colored::*;
 use rayon::prelude::*;
@@ -27,9 +28,8 @@ impl FileOrganizer {
     ///
     /// ### Returns
     /// - `FileOrganizer`: The FileOrganizer.
-    pub fn new(settings_file_path: PathBuf) -> Self {
-        let mut settings = Settings::load_from_file(&settings_file_path)
-            .expect("Error loading recipes file, cannot continue");
+    pub fn new(settings_file_path: PathBuf) -> Result<Self> {
+        let mut settings = Settings::load_from_file(&settings_file_path)?;
         for recipe in &mut settings.recipes {
             if let Some(allowed_extensions) = &mut recipe.allowed_extensions {
                 for extension in allowed_extensions {
@@ -37,7 +37,7 @@ impl FileOrganizer {
                 }
             }
         }
-        Self { settings }
+        Ok(Self { settings })
     }
 
     /// Runs all recipes.
@@ -294,7 +294,10 @@ fn print_recipe_info(recipe: &Recipe) {
         "ℹ️".green(),
         recipe.name.blue(),
         "Date comparator".purple(),
-        recipe.date_comparator
+        recipe
+            .date_comparator
+            .as_ref()
+            .unwrap_or(&DateComparator::ModificationDate)
     );
 }
 
