@@ -10,8 +10,6 @@ pub struct Recipe {
     pub name: String,
     pub source_folder: PathBuf,
     pub destination_folder: PathBuf,
-    pub first_level_folder: Option<String>,
-    pub second_level_folder: Option<String>,
     pub subfolders: Option<Vec<String>>,
     pub allowed_extensions: Option<Vec<String>>,
     pub move_files: bool, 
