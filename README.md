@@ -53,19 +53,18 @@ The recipe file is a JSON array containing one or more organization recipes. Eac
 | `destination_folder` | String        | ✅       | Path to the folder where organized files will be placed.                                                                                                                  |
 | `subfolders`         | Array[String] | ❌       | Date format for each level of subfolders (e.g., "%Y" for year). If not set no folder will be created.                                                                     |
 | `allowed_extensions` | Array[String] | ❌       | List of file extensions to process (empty array = all extensions). If not set no folder will be created.                                                                  |
-| `move_files`         | Boolean       | ❌       | If true, files are moved; if false, files are copied (default: false, files are copied).                                                                                  |
+| `move_files`         | Boolean       | ❌       | If `true`, files are moved; if `false`, files are copied (default: `false`, files are copied).                                                                                  |
 | `last_run`           | String        | ❌       | Date of last execution (automatically managed) that allows resuming the organization from the last execution/the date set manually. If not set, all files are considered. |
+| `date_comparator`    | String        | ❌       | Which date to use for file comparison: `CreationDate` or `ModificationDate` (default: `ModificationDate`).                                                                |
 
-### Date Format Patterns
+### Date Comparison and Format Patterns
 
-The tool uses the `chrono` crate's date formatting. Common patterns include:
+The tool can use either the file's creation date or modification date for organization. This is controlled by the `date_comparator` field in your recipe:
 
-- `%Y` - Year with century (e.g., "2024")
-- `%m` - Month as zero-padded number (e.g., "01", "12")
-- `%d` - Day as zero-padded number (e.g., "01", "31")
-- `%Y-%m` - Year-month (e.g., "2024-01")
-- `%Y-%m-%d` - Full date (e.g., "2024-01-15")
-- `%Y-%m-%d - Backup` - Date with custom suffix (e.g., "2024-01-15 - Backup")
+- `CreationDate` - Uses the file's creation timestamp
+- `ModificationDate` - Uses the file's last modification timestamp (default)
+
+We ecommand using `ModificationDate` when the target files are backup file that may have been created way after the initial file. Use a dry run before any real copy/move to make sure the behaviour is the one expected.
 
 ### Example Recipe File
 
@@ -78,6 +77,7 @@ The tool uses the `chrono` crate's date formatting. Common patterns include:
 		"subfolders": ["%Y"],
 		"allowed_extensions": ["jpg", "jpeg", "png", "heic", "heif", "dng", "gif"],
 		"move_files": false,
+		"date_comparator": "CreationDate",
 		"last_run": "2024-01-15"
 	},
 	{

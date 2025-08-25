@@ -4,24 +4,37 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
 
+#[derive(Debug, Serialize, Deserialize)]
+pub enum DateComparator {
+    CreationDate,
+    ModificationDate,
+}
+
+impl Default for DateComparator {
+    fn default() -> Self {
+        DateComparator::ModificationDate
+    }
+}
+
 /// Recipe is a struct that contains the settings for a recipe.
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct Recipe {
     pub name: String,
     pub source_folder: PathBuf,
     pub destination_folder: PathBuf,
+    pub date_comparator: Option<DateComparator>,
     pub subfolders: Option<Vec<String>>,
     pub allowed_extensions: Option<Vec<String>>,
-    pub move_files: bool, 
+    pub move_files: bool,
     pub last_run: Option<String>,
 }
 
 /// Settings is a struct that contains the settings for the file organizer.
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct Settings {
-    pub recipes: Vec<Recipe>, 
+    pub recipes: Vec<Recipe>,
     #[serde(skip)]
-    pub path: PathBuf
+    pub path: PathBuf,
 }
 
 impl Settings {
@@ -38,7 +51,7 @@ impl Settings {
             let recipes: Vec<Recipe> = serde_json::from_str(&settings_string.as_str())?;
             let to_return = Settings {
                 recipes,
-                path: file_path.clone()
+                path: file_path.clone(),
             };
             return Ok(to_return);
         } else {

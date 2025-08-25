@@ -1,14 +1,11 @@
-
+use crate::file_organizer::settings::{DateComparator, Recipe, Settings};
 use chrono::{DateTime, Utc};
-use crate::file_organizer::settings::Settings;
-use crate::file_organizer::settings::Recipe;
+use colored::*;
+use rayon::prelude::*;
 use std::fs;
 use std::fs::DirEntry;
 use std::path::Path;
 use std::path::PathBuf;
-use rayon::prelude::*;
-use colored::*;
-
 pub mod settings;
 
 /// FileOrganizer is a struct that contains the settings for the file organizer.
@@ -30,8 +27,9 @@ impl FileOrganizer {
     ///
     /// ### Returns
     /// - `FileOrganizer`: The FileOrganizer.
-    pub fn new(settings_file_path:PathBuf) -> Self {
-        let mut settings = Settings::load_from_file(&settings_file_path).expect("Error loading recipes file, cannot continue");
+    pub fn new(settings_file_path: PathBuf) -> Self {
+        let mut settings = Settings::load_from_file(&settings_file_path)
+            .expect("Error loading recipes file, cannot continue");
         for recipe in &mut settings.recipes {
             if let Some(allowed_extensions) = &mut recipe.allowed_extensions {
                 for extension in allowed_extensions {
@@ -52,11 +50,29 @@ impl FileOrganizer {
     pub fn run(&mut self, dry_run: bool) -> anyhow::Result<()> {
         for recipe in &self.settings.recipes {
             let stats = self.run_recipe(&recipe, dry_run)?;
-            println!("{} {} {} - {}", "✅".green(), recipe.name.blue(), "Files matched".purple(), stats.files_matched);
-            println!("{} {} {} - {}", "✅".green(), recipe.name.blue(), "Files processed".purple(), stats.files_processed);
-            println!("{} {} {} - {}", "✅".green(), recipe.name.blue(), "Elapsed time".purple(), seconds_to_string(stats.elapsed_time/1000));
+            println!(
+                "{} {} {} - {}",
+                "✅".green(),
+                recipe.name.blue(),
+                "Files matched".purple(),
+                stats.files_matched
+            );
+            println!(
+                "{} {} {} - {}",
+                "✅".green(),
+                recipe.name.blue(),
+                "Files processed".purple(),
+                stats.files_processed
+            );
+            println!(
+                "{} {} {} - {}",
+                "✅".green(),
+                recipe.name.blue(),
+                "Elapsed time".purple(),
+                seconds_to_string(stats.elapsed_time / 1000)
+            );
         }
-        
+
         // Update last_run for all recipes if not in dry run mode
         if !dry_run {
             let last_run = Utc::now();
@@ -64,7 +80,7 @@ impl FileOrganizer {
             for recipe in &mut self.settings.recipes {
                 recipe.last_run = last_run.clone();
             }
-        
+
             self.settings.save()?;
         }
         Ok(())
@@ -79,27 +95,34 @@ impl FileOrganizer {
     /// ### Returns
     /// - `Result<(), anyhow::Error>`: The result of the recipe run.
     fn run_recipe(&self, recipe: &Recipe, dry_run: bool) -> anyhow::Result<FileOrganizerStats> {
-        if !recipe.source_folder.is_dir()  {
-            return Err(anyhow::Error::msg(format!("{} - Source folder not a directory: {}", recipe.name, recipe.source_folder.display())));
+        if !recipe.source_folder.is_dir() {
+            return Err(anyhow::Error::msg(format!(
+                "{} - Source folder not a directory: {}",
+                recipe.name,
+                recipe.source_folder.display()
+            )));
         }
         if !recipe.destination_folder.is_dir() {
-            return Err(anyhow::Error::msg(format!("{} - Target folder not a directory: {}", recipe.name, recipe.destination_folder.display())));
+            return Err(anyhow::Error::msg(format!(
+                "{} - Target folder not a directory: {}",
+                recipe.name,
+                recipe.destination_folder.display()
+            )));
         }
         print_recipe_info(recipe);
-        let date_boundary = get_date_boundary(recipe)?;
 
         let start_time = Utc::now().timestamp_millis();
-        let entries: Vec<_> = fs::read_dir(&recipe.source_folder)?.collect::<Result<Vec<_>, _>>()?;
-        
-        let results: Vec<_> = entries.par_iter()
-            .map(|entry| {
-                run_for_file(entry, recipe, &date_boundary, dry_run)
-            })
+        let entries: Vec<_> =
+            fs::read_dir(&recipe.source_folder)?.collect::<Result<Vec<_>, _>>()?;
+        let date_boundary = get_date_boundary(recipe)?;
+        let results: Vec<_> = entries
+            .par_iter()
+            .map(|entry| run_for_file(entry, recipe, &date_boundary, dry_run))
             .collect();
-        
+
         let files_processed = entries.len() as u32;
         let mut files_matched = 0;
-        
+
         for result in results {
             if let Ok(is_file_valid) = result {
                 if is_file_valid {
@@ -127,7 +150,12 @@ impl FileOrganizer {
 ///
 /// ### Returns
 /// - `bool`: True if the file is matched by the recipe and has been processed, false otherwise.
-fn run_for_file(entry: &DirEntry, recipe: &Recipe, date_boundary: &DateTime<Utc>, dry_run: bool) -> anyhow::Result<bool> {
+fn run_for_file(
+    entry: &DirEntry,
+    recipe: &Recipe,
+    date_boundary: &DateTime<Utc>,
+    dry_run: bool,
+) -> anyhow::Result<bool> {
     let from_file = entry.path();
     if from_file.is_file() {
         if let Some(filename) = from_file.file_name() {
@@ -137,36 +165,69 @@ fn run_for_file(entry: &DirEntry, recipe: &Recipe, date_boundary: &DateTime<Utc>
             if !is_extension_allowed(&from_file, &recipe.allowed_extensions) {
                 return Ok(false);
             }
-            let last_modification_date = if let Ok(last_modification_date) = get_last_modification_date(&from_file) {
-                last_modification_date
-            } else {
-                return Err(anyhow::Error::msg(format!("{} - Error getting last modification date: {}", recipe.name, from_file.display())));
+            let file_date = match recipe
+                .date_comparator
+                .as_ref()
+                .unwrap_or(&DateComparator::ModificationDate)
+            {
+                DateComparator::CreationDate => get_creation_date(&from_file).map_err(|e| {
+                    anyhow::Error::msg(format!(
+                        "{} - Error getting creation date: {}",
+                        recipe.name, e
+                    ))
+                })?,
+                DateComparator::ModificationDate => get_last_modification_date(&from_file)
+                    .map_err(|e| {
+                        anyhow::Error::msg(format!(
+                            "{} - Error getting last modification date: {}",
+                            recipe.name, e
+                        ))
+                    })?,
             };
-            if last_modification_date.with_timezone(&date_boundary.timezone()) < *date_boundary {
+
+            if file_date.with_timezone(&date_boundary.timezone()) < *date_boundary {
                 return Ok(false);
             }
-            let dest_folder = build_dest_folder(recipe, &last_modification_date);
-            
+            let dest_folder = build_dest_folder(recipe, &file_date);
+
             if !dry_run {
                 if !dest_folder.exists() {
-                    fs::create_dir_all(&dest_folder)?;  
+                    fs::create_dir_all(&dest_folder)?;
                 }
             }
             let dest_file = dest_folder.join(filename.to_str().unwrap());
             if recipe.move_files {
-                if !dry_run {    
+                if !dry_run {
                     if let Err(e) = fs::rename(&from_file, &dest_file) {
-                        return Err(anyhow::Error::msg(format!("{} - Error moving file: {}", recipe.name, e)));
+                        return Err(anyhow::Error::msg(format!(
+                            "{} - Error moving file: {}",
+                            recipe.name, e
+                        )));
                     }
-                } 
-                println!("{} {} {} - {}", "✅".green(), recipe.name.blue(), "File moved".green(), dest_file.to_str().unwrap());
+                }
+                println!(
+                    "{} {} {} - {}",
+                    "✅".green(),
+                    recipe.name.blue(),
+                    "File moved".green(),
+                    dest_file.to_str().unwrap()
+                );
             } else {
                 if !dry_run {
                     if let Err(e) = fs::copy(&from_file, &dest_file) {
-                        return Err(anyhow::Error::msg(format!("{} - Error copying file: {}", recipe.name, e)));
+                        return Err(anyhow::Error::msg(format!(
+                            "{} - Error copying file: {}",
+                            recipe.name, e
+                        )));
                     }
-                } 
-                println!("{} {} {} - {}", "✅".green(), recipe.name.blue(), "File copied".green(), dest_file.to_str().unwrap());
+                }
+                println!(
+                    "{} {} {} - {}",
+                    "✅".green(),
+                    recipe.name.blue(),
+                    "File copied".green(),
+                    dest_file.to_str().unwrap()
+                );
             }
             return Ok(true);
         }
@@ -176,12 +237,65 @@ fn run_for_file(entry: &DirEntry, recipe: &Recipe, date_boundary: &DateTime<Utc>
 }
 
 fn print_recipe_info(recipe: &Recipe) {
-    println!("{} {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Source folder".purple(), recipe.source_folder.display());
-    println!("{} {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Target folder".purple(), recipe.destination_folder.display());
-    println!("{} {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Last run".purple(), recipe.last_run.as_ref().unwrap_or(&"Never".to_string()));
-    println!("{} {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Mode".purple(), if recipe.move_files { "Move" } else { "Copy" });
-    println!("{} {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Allowed extensions".purple(), recipe.allowed_extensions.as_ref().map(|v| v.join(", ")).as_ref().unwrap_or(&"All".to_string()));
-    println!("{} {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Subfolders".purple(), recipe.subfolders.as_ref().map(|v| v.join(", ")).as_ref().unwrap_or(&"None".to_string()));
+    println!(
+        "{} {} {} - {}",
+        "ℹ️".green(),
+        recipe.name.blue(),
+        "Source folder".purple(),
+        recipe.source_folder.display()
+    );
+    println!(
+        "{} {} {} - {}",
+        "ℹ️".green(),
+        recipe.name.blue(),
+        "Target folder".purple(),
+        recipe.destination_folder.display()
+    );
+    println!(
+        "{} {} {} - {}",
+        "ℹ️".green(),
+        recipe.name.blue(),
+        "Last run".purple(),
+        recipe.last_run.as_ref().unwrap_or(&"Never".to_string())
+    );
+    println!(
+        "{} {} {} - {}",
+        "ℹ️".green(),
+        recipe.name.blue(),
+        "Mode".purple(),
+        if recipe.move_files { "Move" } else { "Copy" }
+    );
+    println!(
+        "{} {} {} - {}",
+        "ℹ️".green(),
+        recipe.name.blue(),
+        "Allowed extensions".purple(),
+        recipe
+            .allowed_extensions
+            .as_ref()
+            .map(|v| v.join(", "))
+            .as_ref()
+            .unwrap_or(&"All".to_string())
+    );
+    println!(
+        "{} {} {} - {}",
+        "ℹ️".green(),
+        recipe.name.blue(),
+        "Subfolders".purple(),
+        recipe
+            .subfolders
+            .as_ref()
+            .map(|v| v.join(", "))
+            .as_ref()
+            .unwrap_or(&"None".to_string())
+    );
+    println!(
+        "{} {} {} - {:?}",
+        "ℹ️".green(),
+        recipe.name.blue(),
+        "Date comparator".purple(),
+        recipe.date_comparator
+    );
 }
 
 /// Gets the date boundary for a recipe.
@@ -192,11 +306,17 @@ fn print_recipe_info(recipe: &Recipe) {
 /// ### Returns
 /// - `Result<DateTime<Utc>, anyhow::Error>`: The date boundary.
 fn get_date_boundary(recipe: &Recipe) -> anyhow::Result<DateTime<Utc>> {
-    let date_boundary = recipe.last_run.clone().unwrap_or_else(|| "1970-01-01".to_string());
-    let date_boundary = DateTime::parse_from_str(&format!("{} 00:00:00 +0000", date_boundary), "%Y-%m-%d %H:%M:%S %z")?.to_utc();
+    let date_boundary = recipe
+        .last_run
+        .clone()
+        .unwrap_or_else(|| "1970-01-01".to_string());
+    let date_boundary = DateTime::parse_from_str(
+        &format!("{} 00:00:00 +0000", date_boundary),
+        "%Y-%m-%d %H:%M:%S %z",
+    )?
+    .to_utc();
     Ok(date_boundary)
 }
-
 
 /// Gets the last modification date of a file.
 ///
@@ -208,8 +328,22 @@ fn get_date_boundary(recipe: &Recipe) -> anyhow::Result<DateTime<Utc>> {
 fn get_last_modification_date(file: &Path) -> anyhow::Result<DateTime<Utc>> {
     let metadata = fs::metadata(file)?;
     let last_modification_date = metadata.modified()?;
-    let last_modification_date = DateTime::<Utc>::from(last_modification_date);   
+    let last_modification_date = DateTime::<Utc>::from(last_modification_date);
     Ok(last_modification_date)
+}
+
+/// Gets the creation date of a file.
+///
+/// ### Parameters
+/// - `file`: The file to get the creation date of.
+///
+/// ### Returns
+/// - `Result<DateTime<Utc>, anyhow::Error>`: The creation date of the file.
+fn get_creation_date(file: &Path) -> anyhow::Result<DateTime<Utc>> {
+    let metadata = fs::metadata(file)?;
+    let creation_date = metadata.created()?;
+    let creation_date = DateTime::<Utc>::from(creation_date);
+    Ok(creation_date)
 }
 
 /// Builds the destination folder.
@@ -225,7 +359,8 @@ fn build_dest_folder(recipe: &Recipe, last_modification_date: &DateTime<Utc>) ->
     let mut dest_folder = recipe.destination_folder.clone();
     if let Some(subfolders) = &recipe.subfolders {
         for subfolder in subfolders {
-            let subfolder_name = date_to_folder_name(&last_modification_date, &Some(subfolder.clone()));
+            let subfolder_name =
+                date_to_folder_name(&last_modification_date, &Some(subfolder.clone()));
             dest_folder = dest_folder.join(subfolder_name);
         }
     }
@@ -245,12 +380,12 @@ fn is_extension_allowed(file: &Path, allowed_extensions: &Option<Vec<String>>) -
         if allowed_extensions.is_empty() {
             return true;
         }
-    if let Some(ext) = file.extension() {
-        if let Some(ext_str) = ext.to_str() {
-            return allowed_extensions.contains(&ext_str.to_string());
-        } else {
-            return false;
-        }
+        if let Some(ext) = file.extension() {
+            if let Some(ext_str) = ext.to_str() {
+                return allowed_extensions.contains(&ext_str.to_string());
+            } else {
+                return false;
+            }
         } else {
             return false;
         }
@@ -274,7 +409,6 @@ fn date_to_folder_name(date: &DateTime<Utc>, format: &Option<String>) -> String 
     }
 }
 
-
 /// Converts seconds to a string.
 ///
 /// ### Parameters
@@ -290,7 +424,18 @@ fn seconds_to_string(seconds: i64) -> String {
         return format!("{}m {}s", seconds / 60, seconds % 60);
     }
     if seconds < 86400 {
-        return format!("{}h {}m {}s", seconds / 3600, (seconds % 3600) / 60, seconds % 60);
+        return format!(
+            "{}h {}m {}s",
+            seconds / 3600,
+            (seconds % 3600) / 60,
+            seconds % 60
+        );
     }
-    return format!("{}d {}h {}m {}s", seconds / 86400, (seconds % 86400) / 3600, (seconds % 3600) / 60, seconds % 60);
+    return format!(
+        "{}d {}h {}m {}s",
+        seconds / 86400,
+        (seconds % 86400) / 3600,
+        (seconds % 3600) / 60,
+        seconds % 60
+    );
 }
