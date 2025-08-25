@@ -85,6 +85,7 @@ impl FileOrganizer {
         if !recipe.destination_folder.is_dir() {
             return Err(anyhow::Error::msg(format!("{} - Target folder not a directory: {}", recipe.name, recipe.destination_folder.display())));
         }
+        print_recipe_info(recipe);
         let date_boundary = get_date_boundary(recipe)?;
 
         let entries = fs::read_dir(&recipe.source_folder)?;
@@ -169,6 +170,14 @@ fn run_for_file(entry: DirEntry, recipe: &Recipe, date_boundary: &DateTime<Utc>,
     Ok(false)
 }
 
+fn print_recipe_info(recipe: &Recipe) {
+    println!("{}  {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Source folder".purple(), recipe.source_folder.display());
+    println!("{}  {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Target folder".purple(), recipe.destination_folder.display());
+    println!("{}  {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Last run".purple(), recipe.last_run.as_ref().unwrap_or(&"Never".to_string()));
+    println!("{}  {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Mode".purple(), if recipe.move_files { "Move" } else { "Copy" });
+    println!("{}  {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Allowed extensions".purple(), recipe.allowed_extensions.as_ref().map(|v| v.join(", ")).as_ref().unwrap_or(&"All".to_string()));
+    println!("{}  {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Subfolders".purple(), recipe.subfolders.as_ref().map(|v| v.join(", ")).as_ref().unwrap_or(&"None".to_string()));
+}
 
 /// Gets the date boundary for a recipe.
 ///
