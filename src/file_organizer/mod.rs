@@ -6,6 +6,7 @@ use std::fs;
 use std::fs::DirEntry;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::mpsc::Receiver;
 use colored::*;
 
 pub mod settings;
@@ -13,6 +14,12 @@ pub mod settings;
 /// FileOrganizer is a struct that contains the settings for the file organizer.
 pub struct FileOrganizer {
     settings: Settings,
+}
+
+pub struct FileOrganizerStats {
+    files_matched: u32,
+    files_processed: u32,
+    elapsed_time: i64,
 }
 
 impl FileOrganizer {
@@ -44,7 +51,10 @@ impl FileOrganizer {
     /// - `Result<(), anyhow::Error>`: The result of the recipes run.
     pub fn run(&mut self, dry_run: bool) -> anyhow::Result<()> {
         for recipe in &self.settings.recipes {
-            self.run_recipe(&recipe, dry_run)?;
+            let stats = self.run_recipe(&recipe, dry_run)?;
+            println!("{} {} {} - {}", "✅".green(), recipe.name.blue(), "Files matched".purple(), stats.files_matched);
+            println!("{} {} {} - {}", "✅".green(), recipe.name.blue(), "Files processed".purple(), stats.files_processed);
+            println!("{} {} {} - {}", "✅".green(), recipe.name.blue(), "Elapsed time".purple(), seconds_to_string(stats.elapsed_time/1000));
         }
         
         // Update last_run for all recipes if not in dry run mode
@@ -68,7 +78,7 @@ impl FileOrganizer {
     ///
     /// ### Returns
     /// - `Result<(), anyhow::Error>`: The result of the recipe run.
-    fn run_recipe(&self, recipe: &Recipe, dry_run: bool) -> anyhow::Result<()> {
+    fn run_recipe(&self, recipe: &Recipe, dry_run: bool) -> anyhow::Result<FileOrganizerStats> {
         if !recipe.source_folder.is_dir()  {
             return Err(anyhow::Error::msg(format!("{} - Source folder not a directory: {}", recipe.name, recipe.source_folder.display())));
         }
@@ -78,16 +88,25 @@ impl FileOrganizer {
         let date_boundary = get_date_boundary(recipe)?;
 
         let entries = fs::read_dir(&recipe.source_folder)?;
+        let mut files_processed: u32 = 0;
+        let mut files_matched = 0;
+        let start_time = Utc::now().timestamp_millis();
         for entry in entries {
+            files_processed += 1;
             let entry = entry?;
             if let Ok(is_file_valid) = run_for_file(entry, recipe, &date_boundary, dry_run) {
                 if !is_file_valid {
                     continue;
                 }
+                files_matched += 1;
             }
         }
-       
-        Ok(())
+        let elapsed_time = Utc::now().timestamp_millis() - start_time;
+        Ok(FileOrganizerStats {
+            files_matched,
+            files_processed,
+            elapsed_time,
+        })
     }
 }
 
@@ -239,4 +258,25 @@ fn date_to_folder_name(date: &DateTime<Utc>, format: &Option<String>) -> String 
     } else {
         return "".to_string();
     }
+}
+
+
+/// Converts seconds to a string.
+///
+/// ### Parameters
+/// - `seconds`: The seconds to convert.
+///
+/// ### Returns
+/// - `String`: The string.
+fn seconds_to_string(seconds: i64) -> String {
+    if seconds < 60 {
+        return format!("{}s", seconds);
+    }
+    if seconds < 3600 {
+        return format!("{}m {}s", seconds / 60, seconds % 60);
+    }
+    if seconds < 86400 {
+        return format!("{}h {}m {}s", seconds / 3600, (seconds % 3600) / 60, seconds % 60);
+    }
+    return format!("{}d {}h {}m {}s", seconds / 86400, (seconds % 86400) / 3600, (seconds % 3600) / 60, seconds % 60);
 }
