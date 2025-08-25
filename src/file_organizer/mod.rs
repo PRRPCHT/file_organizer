@@ -6,7 +6,7 @@ use std::fs;
 use std::fs::DirEntry;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::mpsc::Receiver;
+use rayon::prelude::*;
 use colored::*;
 
 pub mod settings;
@@ -88,18 +88,23 @@ impl FileOrganizer {
         print_recipe_info(recipe);
         let date_boundary = get_date_boundary(recipe)?;
 
-        let entries = fs::read_dir(&recipe.source_folder)?;
-        let mut files_processed: u32 = 0;
-        let mut files_matched = 0;
         let start_time = Utc::now().timestamp_millis();
-        for entry in entries {
-            files_processed += 1;
-            let entry = entry?;
-            if let Ok(is_file_valid) = run_for_file(entry, recipe, &date_boundary, dry_run) {
-                if !is_file_valid {
-                    continue;
+        let entries: Vec<_> = fs::read_dir(&recipe.source_folder)?.collect::<Result<Vec<_>, _>>()?;
+        
+        let results: Vec<_> = entries.par_iter()
+            .map(|entry| {
+                run_for_file(entry, recipe, &date_boundary, dry_run)
+            })
+            .collect();
+        
+        let files_processed = entries.len() as u32;
+        let mut files_matched = 0;
+        
+        for result in results {
+            if let Ok(is_file_valid) = result {
+                if is_file_valid {
+                    files_matched += 1;
                 }
-                files_matched += 1;
             }
         }
         let elapsed_time = Utc::now().timestamp_millis() - start_time;
@@ -122,7 +127,7 @@ impl FileOrganizer {
 ///
 /// ### Returns
 /// - `bool`: True if the file is matched by the recipe and has been processed, false otherwise.
-fn run_for_file(entry: DirEntry, recipe: &Recipe, date_boundary: &DateTime<Utc>, dry_run: bool) -> anyhow::Result<bool> {
+fn run_for_file(entry: &DirEntry, recipe: &Recipe, date_boundary: &DateTime<Utc>, dry_run: bool) -> anyhow::Result<bool> {
     let from_file = entry.path();
     if from_file.is_file() {
         if let Some(filename) = from_file.file_name() {
@@ -171,12 +176,12 @@ fn run_for_file(entry: DirEntry, recipe: &Recipe, date_boundary: &DateTime<Utc>,
 }
 
 fn print_recipe_info(recipe: &Recipe) {
-    println!("{}  {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Source folder".purple(), recipe.source_folder.display());
-    println!("{}  {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Target folder".purple(), recipe.destination_folder.display());
-    println!("{}  {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Last run".purple(), recipe.last_run.as_ref().unwrap_or(&"Never".to_string()));
-    println!("{}  {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Mode".purple(), if recipe.move_files { "Move" } else { "Copy" });
-    println!("{}  {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Allowed extensions".purple(), recipe.allowed_extensions.as_ref().map(|v| v.join(", ")).as_ref().unwrap_or(&"All".to_string()));
-    println!("{}  {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Subfolders".purple(), recipe.subfolders.as_ref().map(|v| v.join(", ")).as_ref().unwrap_or(&"None".to_string()));
+    println!("{} {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Source folder".purple(), recipe.source_folder.display());
+    println!("{} {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Target folder".purple(), recipe.destination_folder.display());
+    println!("{} {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Last run".purple(), recipe.last_run.as_ref().unwrap_or(&"Never".to_string()));
+    println!("{} {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Mode".purple(), if recipe.move_files { "Move" } else { "Copy" });
+    println!("{} {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Allowed extensions".purple(), recipe.allowed_extensions.as_ref().map(|v| v.join(", ")).as_ref().unwrap_or(&"All".to_string()));
+    println!("{} {} {} - {}", "ℹ️".green(), recipe.name.blue(), "Subfolders".purple(), recipe.subfolders.as_ref().map(|v| v.join(", ")).as_ref().unwrap_or(&"None".to_string()));
 }
 
 /// Gets the date boundary for a recipe.

@@ -119,6 +119,7 @@ The tool uses the `chrono` crate's date formatting. Common patterns include:
 - `simple_logger` - Simple logging implementation
 - `chrono` - Date and time handling
 - `colored` - Terminal color support
+- `rayon` - Parallel iteration
 
 ## Contributing
 

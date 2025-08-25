@@ -62,7 +62,7 @@ fn main() {
     let recipes = get_recipes(&matches);
     let is_dry_run = get_dry_run_flag(&matches);
     if is_dry_run {
-        println!("{} - No files will be moved or copied", "ℹ️  Dry run mode enabled".blue());
+        println!("{} - No files will be moved or copied", "ℹ️ Dry run mode enabled".blue());
     }
 
     let mut file_organizer = FileOrganizer::new(recipes);
