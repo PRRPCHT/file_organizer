@@ -75,6 +75,9 @@ fn main() {
     let recipes = get_recipes(&matches);
     let is_dry_run = get_dry_run_flag(&matches);
     let is_iterative = get_iterative_flag(&matches);
+    println!("{}", "----------------------------------------".blue());
+    println!("{}", "- file_organizer                       -".blue());
+    println!("{}", "----------------------------------------".blue());
     if is_dry_run {
         println!(
             "{} - No files will be moved or copied",

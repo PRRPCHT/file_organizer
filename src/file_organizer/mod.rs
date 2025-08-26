@@ -52,7 +52,12 @@ impl FileOrganizer {
     /// ### Returns
     /// - `Result<(), anyhow::Error>`: The result of the recipes run.
     pub fn run(&mut self) -> anyhow::Result<()> {
-        for recipe in &self.settings.recipes {
+        println!(
+            "ℹ️ {} - Running {} recipe(s)",
+            "file_organizer".blue(),
+            self.settings.recipes.len()
+        );
+        for (i, recipe) in self.settings.recipes.iter().enumerate() {
             let stats = self.run_recipe(&recipe)?;
             println!(
                 "{} {} {} - {}",
@@ -75,6 +80,9 @@ impl FileOrganizer {
                 "Elapsed time".purple(),
                 seconds_to_string(stats.elapsed_time / 1000)
             );
+            if i < self.settings.recipes.len() - 1 {
+                println!("{}", "----------------------------------------".blue());
+            }
         }
 
         // Update last_run for all recipes if not in dry run mode
@@ -285,6 +293,10 @@ fn run_for_file(
     Ok(false)
 }
 
+/// Prints the recipe info.
+///
+/// ### Parameters
+/// - `recipe`: The recipe to print the info for.
 fn print_recipe_info(recipe: &Recipe) {
     println!(
         "{} {} {} - {}",
