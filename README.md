@@ -27,6 +27,7 @@ file_organizer <RECIPES> [OPTIONS]
 ### Options
 
 - `--dry_run` - Performs a dry run test (no files will be moved or copied)
+- `--iterative` - Runs recipes iteratively over the files rather than in parallel (default behaviour). Slower, but treats the files in file name order. The recipes are still executed iteratively one after another.
 
 ### Examples
 
@@ -36,8 +37,8 @@ file_organizer <RECIPES> [OPTIONS]
 # Organize files using a recipe file
 file_organizer recipes/photos.json
 
-# Test your recipe without actually moving files
-file_organizer recipes/photos.json --dry_run
+# Test your recipe without actually moving files, iteratively
+file_organizer recipes/photos.json --dry_run --iterative
 ```
 
 ## Recipe File Structure

@@ -27,6 +27,13 @@ fn make_args() -> Command {
             .required(false)
             .action(ArgAction::SetTrue),
         )
+        .arg(
+            arg!(
+                --iterative "Runs iteratively instead of in parallel"
+            )
+            .required(false)
+            .action(ArgAction::SetTrue),
+        )
 }
 
 /// Gets the recipes path.
@@ -45,6 +52,14 @@ fn get_dry_run_flag(matches: &ArgMatches) -> bool {
     matches.get_flag("dry_run")
 }
 
+/// Gets the iterative flag.
+///
+/// ### Return
+/// A boolean with the iterative flag.
+fn get_iterative_flag(matches: &ArgMatches) -> bool {
+    matches.get_flag("iterative")
+}
+
 fn main() {
     let level = if cfg!(debug_assertions) {
         LevelFilter::Debug
@@ -59,21 +74,28 @@ fn main() {
     let matches = make_args().get_matches();
     let recipes = get_recipes(&matches);
     let is_dry_run = get_dry_run_flag(&matches);
+    let is_iterative = get_iterative_flag(&matches);
     if is_dry_run {
         println!(
             "{} - No files will be moved or copied",
             "ℹ️ Dry run mode enabled".blue()
         );
     }
+    if is_iterative {
+        println!(
+            "{} - Running iteratively instead of in parallel",
+            "ℹ️ Iterative mode enabled".blue()
+        );
+    }
 
-    let mut file_organizer = match FileOrganizer::new(recipes) {
+    let mut file_organizer = match FileOrganizer::new(recipes, is_dry_run, is_iterative) {
         Ok(file_organizer) => file_organizer,
         Err(e) => {
             println!("{} {}", "❌Error:".red().bold(), e);
             return;
         }
     };
-    if let Err(e) = file_organizer.run(is_dry_run) {
+    if let Err(e) = file_organizer.run() {
         println!("{} {}", "❌Error:".red().bold(), e);
     }
 }

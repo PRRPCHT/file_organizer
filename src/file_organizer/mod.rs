@@ -9,11 +9,14 @@ use std::path::Path;
 use std::path::PathBuf;
 pub mod settings;
 
-/// FileOrganizer is a struct that contains the settings for the file organizer.
+/// FileOrganizer is a struct that contains the settings and the state of the file organizer.
 pub struct FileOrganizer {
     settings: Settings,
+    is_dry_run: bool,
+    is_iterative: bool,
 }
 
+/// FileOrganizerStats is a struct that contains the statistics of the file organizer.
 pub struct FileOrganizerStats {
     files_matched: u32,
     files_processed: u32,
@@ -28,7 +31,7 @@ impl FileOrganizer {
     ///
     /// ### Returns
     /// - `FileOrganizer`: The FileOrganizer.
-    pub fn new(settings_file_path: PathBuf) -> Result<Self> {
+    pub fn new(settings_file_path: PathBuf, is_dry_run: bool, is_iterative: bool) -> Result<Self> {
         let mut settings = Settings::load_from_file(&settings_file_path)?;
         for recipe in &mut settings.recipes {
             if let Some(allowed_extensions) = &mut recipe.allowed_extensions {
@@ -37,19 +40,20 @@ impl FileOrganizer {
                 }
             }
         }
-        Ok(Self { settings })
+        Ok(Self {
+            settings,
+            is_dry_run,
+            is_iterative,
+        })
     }
 
     /// Runs all recipes.
     ///
-    /// ### Parameters
-    /// - `dry_run`: If true, the recipes will not be run.
-    ///
     /// ### Returns
     /// - `Result<(), anyhow::Error>`: The result of the recipes run.
-    pub fn run(&mut self, dry_run: bool) -> anyhow::Result<()> {
+    pub fn run(&mut self) -> anyhow::Result<()> {
         for recipe in &self.settings.recipes {
-            let stats = self.run_recipe(&recipe, dry_run)?;
+            let stats = self.run_recipe(&recipe)?;
             println!(
                 "{} {} {} - {}",
                 "✅".green(),
@@ -74,7 +78,7 @@ impl FileOrganizer {
         }
 
         // Update last_run for all recipes if not in dry run mode
-        if !dry_run {
+        if !self.is_dry_run {
             let last_run = Utc::now();
             let last_run = Some(last_run.format("%Y-%m-%d").to_string());
             for recipe in &mut self.settings.recipes {
@@ -94,7 +98,7 @@ impl FileOrganizer {
     ///
     /// ### Returns
     /// - `Result<(), anyhow::Error>`: The result of the recipe run.
-    fn run_recipe(&self, recipe: &Recipe, dry_run: bool) -> anyhow::Result<FileOrganizerStats> {
+    fn run_recipe(&self, recipe: &Recipe) -> anyhow::Result<FileOrganizerStats> {
         if !recipe.source_folder.is_dir() {
             return Err(anyhow::Error::msg(format!(
                 "{} - Source folder not a directory: {}",
@@ -112,15 +116,14 @@ impl FileOrganizer {
         print_recipe_info(recipe);
 
         let start_time = Utc::now().timestamp_millis();
-        let entries: Vec<_> =
-            fs::read_dir(&recipe.source_folder)?.collect::<Result<Vec<_>, _>>()?;
         let date_boundary = get_date_boundary(recipe)?;
-        let results: Vec<_> = entries
-            .par_iter()
-            .map(|entry| run_for_file(entry, recipe, &date_boundary, dry_run))
-            .collect();
+        let results: Vec<_> = if self.is_iterative {
+            run_recipe_iterative(recipe, &date_boundary, self.is_dry_run)?
+        } else {
+            run_recipe_parallel(recipe, &date_boundary, self.is_dry_run)?
+        };
 
-        let files_processed = entries.len() as u32;
+        let files_processed = results.len() as u32;
         let mut files_matched = 0;
 
         for result in results {
@@ -137,6 +140,52 @@ impl FileOrganizer {
             elapsed_time,
         })
     }
+}
+
+/// Runs a recipe iteratively.
+///
+/// ### Parameters
+/// - `recipe`: The recipe to run.
+/// - `date_boundary`: The date boundary.
+/// - `dry_run`: If true, the recipe will not be run.
+///
+/// ### Returns
+/// - `Result<Vec<Result<bool>>>`: The results of the recipe run.
+fn run_recipe_iterative(
+    recipe: &Recipe,
+    date_boundary: &DateTime<Utc>,
+    dry_run: bool,
+) -> Result<Vec<Result<bool>>> {
+    let mut entries: Vec<_> =
+        fs::read_dir(&recipe.source_folder)?.collect::<Result<Vec<_>, _>>()?;
+    entries.sort_by_key(|entry| entry.path());
+    let results: Vec<_> = entries
+        .iter()
+        .map(|entry| run_for_file(entry, recipe, &date_boundary, dry_run))
+        .collect();
+    Ok(results)
+}
+
+/// Runs a recipe in parallel.
+///
+/// ### Parameters
+/// - `recipe`: The recipe to run.
+/// - `date_boundary`: The date boundary.
+/// - `dry_run`: If true, the recipe will not be run.
+///
+/// ### Returns
+/// - `Result<Vec<Result<bool>>>`: The results of the recipe run.
+fn run_recipe_parallel(
+    recipe: &Recipe,
+    date_boundary: &DateTime<Utc>,
+    dry_run: bool,
+) -> Result<Vec<Result<bool>>> {
+    let entries: Vec<_> = fs::read_dir(&recipe.source_folder)?.collect::<Result<Vec<_>, _>>()?;
+    let results: Vec<_> = entries
+        .par_iter()
+        .map(|entry| run_for_file(entry, recipe, &date_boundary, dry_run))
+        .collect();
+    Ok(results)
 }
 
 /// Runs a recipe for a file.
